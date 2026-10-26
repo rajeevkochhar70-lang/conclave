@@ -39,21 +39,32 @@ def _safe(name, fn, cfg):
         slack(cfg.slack_webhook, f":x: CONCLAVE {name} failed: {e}")
 
 
-def build_scheduler(cfg: Config, provider, book: PaperBook, llm: LLM) -> BlockingScheduler:
+def _with_book(cfg: Config, fn):
+    """Open the paper book in the thread that uses it. APScheduler runs jobs on worker threads and a
+    sqlite3 connection can only be used by the thread that created it — a book opened once in start()
+    made every scheduled run fail (2026-10-12..10-21)."""
+    book = PaperBook(cfg.db_path, cfg.starting_equity)
+    try:
+        return fn(book)
+    finally:
+        book.con.close()
+
+
+def build_scheduler(cfg: Config, provider, llm: LLM) -> BlockingScheduler:
     sched = WallClockScheduler(timezone=TZ)
-    sched.add_job(lambda: _safe("daily", lambda: run_daily(provider, cfg, book), cfg),
+    sched.add_job(lambda: _safe("daily", lambda: _with_book(cfg, lambda book: run_daily(provider, cfg, book)), cfg),
                   CronTrigger(day_of_week="mon-fri", hour=13, minute=30, timezone=TZ), id="daily",
                   misfire_grace_time=3600, coalesce=True)
-    sched.add_job(lambda: _safe("scan", lambda: run_scan(provider, cfg, book, llm), cfg),
+    sched.add_job(lambda: _safe("scan", lambda: _with_book(cfg, lambda book: run_scan(provider, cfg, book, llm)),
+                                cfg),
                   CronTrigger(day_of_week="tue,sat", hour=19, minute=30, timezone=TZ), id="scan",
                   misfire_grace_time=3600, coalesce=True)
     return sched
 
 
 def start(cfg: Config, provider):
-    book = PaperBook(cfg.db_path, cfg.starting_equity)
     llm = LLM(cfg)
-    sched = build_scheduler(cfg, provider, book, llm)
+    sched = build_scheduler(cfg, provider, llm)
     log.info("scheduler started: daily Mon-Fri 13:30 PT, scan Tue/Sat 19:30 PT")
     slack(cfg.slack_webhook, "CONCLAVE scheduler online (paper mode)")
     sched.start()
