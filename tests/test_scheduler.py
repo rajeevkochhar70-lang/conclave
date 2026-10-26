@@ -28,3 +28,10 @@ def test_scheduler_wait_is_capped_so_machine_sleep_cannot_delay_jobs():
     finally:
         sch.shutdown(wait=False)
         loop.join(5)
+
+
+def test_scan_runs_friday_evening_not_saturday():
+    # Scans moved from Saturday to Friday 19:30 PT so the weekend's machine downtime can't drop them.
+    sch = build_scheduler(cfg=None, provider=None, llm=None)
+    trigger = str(sch.get_job("scan").trigger)
+    assert "fri" in trigger and "sat" not in trigger
