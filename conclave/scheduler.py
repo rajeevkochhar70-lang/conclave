@@ -57,7 +57,7 @@ def build_scheduler(cfg: Config, provider, llm: LLM) -> BlockingScheduler:
                   misfire_grace_time=3600, coalesce=True)
     sched.add_job(lambda: _safe("scan", lambda: _with_book(cfg, lambda book: run_scan(provider, cfg, book, llm)),
                                 cfg),
-                  CronTrigger(day_of_week="tue,sat", hour=19, minute=30, timezone=TZ), id="scan",
+                  CronTrigger(day_of_week="tue,fri", hour=19, minute=30, timezone=TZ), id="scan",
                   misfire_grace_time=3600, coalesce=True)
     return sched
 
@@ -65,6 +65,6 @@ def build_scheduler(cfg: Config, provider, llm: LLM) -> BlockingScheduler:
 def start(cfg: Config, provider):
     llm = LLM(cfg)
     sched = build_scheduler(cfg, provider, llm)
-    log.info("scheduler started: daily Mon-Fri 13:30 PT, scan Tue/Sat 19:30 PT")
+    log.info("scheduler started: daily Mon-Fri 13:30 PT, scan Tue/Fri 19:30 PT")
     slack(cfg.slack_webhook, "CONCLAVE scheduler online (paper mode)")
     sched.start()
